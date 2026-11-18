@@ -11,6 +11,6 @@ As questões ficam em `questions.js`.
 ## Salas
 
 - `/` — SENAI · Fundamentos dos Processos de Produção (Quiz Chão de Fábrica)
-- `/gestao-de-vendas/` — ESPM · Tecnólogo em Gestão Comercial · Gestão de Vendas
+- `/gestao-de-vendas/` — redireciona para https://glauciomatos.github.io/quiz-gestao-de-vendas/ (repositório próprio)
 
-Cada sala tem `questions.js` e `icons.js` próprios; o motor do jogo (`app.js`) é compartilhado e lê os textos de `window.QUIZ`.
+O motor do jogo (`app.js`) lê textos e identidade de `window.QUIZ`, o que permite reaproveitá-lo em outras salas.
