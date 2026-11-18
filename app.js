@@ -131,7 +131,7 @@ function publishState(){
   const q = curQ();
   const msg = {seq: ++H.seq, game: H.game, phase: H.phase, qi: H.qi, total: H.qlist.length};
   if(q && H.phase !== "lobby" && H.phase !== "end"){
-    msg.text = q.q; msg.opts = q.o; msg.tf = !!q.tf; msg.aula = q.a;
+    msg.text = q.q; msg.opts = q.o; msg.tf = !!q.tf; msg.aula = q.a; msg.al = AULAS[q.a].split("·")[0].trim();
     if(H.phase === "question"){ msg.rem = Math.max(0, deadline() - Date.now()); msg.lim = H.limit; }
     else msg.correct = q.c;
   }
@@ -324,7 +324,7 @@ function renderLobby(){
         <label for="scope">Conteúdo
           <select id="scope">
             <option value="0" ${H.scope===0?"selected":""}>Todas as aulas · ${QUESTIONS.length} questões</option>
-            ${Object.keys(AULAS).map(Number).map(a => `<option value="${a}" ${H.scope===a?"selected":""}>Só Aula ${a} · ${QUESTIONS.filter(q=>q.a===a).length} questões</option>`).join("")}
+            ${Object.keys(AULAS).map(Number).map(a => `<option value="${a}" ${H.scope===a?"selected":""}>Só ${esc(AULAS[a].split("·")[0].trim())} · ${QUESTIONS.filter(q=>q.a===a).length} questões</option>`).join("")}
           </select></label>
         <label for="limit">Tempo por questão
           <select id="limit">
@@ -378,7 +378,7 @@ function renderHostQuestion(){
   lastSecond = left;
   $app.className = "app";
   $app.innerHTML = hostTop() + `
-  <div class="row"><span class="chip">Questão <b>${H.qi+1}</b>/${H.qlist.length}</span><span class="chip">Aula <b>${q.a}</b></span>${q.tf?'<span class="chip">Verdadeiro ou falso</span>':""}</div>
+  <div class="row"><span class="chip">Questão <b>${H.qi+1}</b>/${H.qlist.length}</span><span class="chip"><b>${esc(AULAS[q.a].split("·")[0].trim())}</b></span>${q.tf?'<span class="chip">Verdadeiro ou falso</span>':""}</div>
   <div class="qhead">
     <div class="bigclock ${!rev && left<=5?"low":""}" id="hclock">${rev ? "0" : left}</div>
     <div class="qcard pop"><span class="tag">${esc(AULAS[q.a].split("·")[1].trim())}</span><h2>${esc(q.q)}</h2></div>
@@ -589,7 +589,7 @@ function renderPlayer(force){
       return;
     }
     $app.innerHTML = pTop() + `
-      <div class="row"><span class="chip">Questão <b>${s.qi+1}</b>/${s.total}</span><span class="chip">Aula <b>${s.aula}</b></span></div>
+      <div class="row"><span class="chip">Questão <b>${s.qi+1}</b>/${s.total}</span><span class="chip"><b>${esc(s.al || "Aula " + s.aula)}</b></span></div>
       <div class="ptimer"><i id="ptf"></i></div>
       <p class="pq">${esc(s.text)}</p>
       <div class="ptiles ${s.tf?"tf":""}">
