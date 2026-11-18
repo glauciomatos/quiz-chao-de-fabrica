@@ -14,7 +14,19 @@ const BROKERS = [
   {url: "wss://test.mosquitto.org:8081/mqtt"}
 ];
 const BROKER_OVERRIDE = params.get("broker"); // só para testes
-const TOPIC_ROOT = "quiz-chao-de-fabrica/v1/";
+/* Textos e identidade de cada sala. Uma página pode definir window.QUIZ antes de carregar este arquivo. */
+const T = Object.assign({
+  key: "qcf",
+  topic: "quiz-chao-de-fabrica/v1/",
+  name: "Quiz Chão de Fábrica",
+  eyebrow: "Fundamentos dos Processos de Produção · Revisão ao vivo",
+  lobbyTitle: "Aguardando a equipe do turno",
+  joinTitle: "Bater o ponto e entrar no turno",
+  endEyebrow: "Fim do turno",
+  champion: "Campeão do turno!",
+  logo: null
+}, window.QUIZ || {});
+const TOPIC_ROOT = T.topic;
 const $app = document.getElementById("app");
 
 const esc = s => String(s ?? "").replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
@@ -25,7 +37,8 @@ const store = {
 };
 const rid = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), b => "abcdefghijkmnpqrstuvwxyz23456789"[b % 32]).join("");
 const fmt = n => Number(n || 0).toLocaleString("pt-BR");
-const GEAR = '<svg width="32" height="32" viewBox="0 0 24 24" aria-hidden="true"><path fill="#ffc61a" d="M10.3 2h3.4l.5 2.6 1.9.8 2.2-1.5 2.4 2.4-1.5 2.2.8 1.9 2.6.5v3.4l-2.6.5-.8 1.9 1.5 2.2-2.4 2.4-2.2-1.5-1.9.8-.5 2.6h-3.4l-.5-2.6-1.9-.8-2.2 1.5-2.4-2.4 1.5-2.2-.8-1.9L2 13.7v-3.4l2.6-.5.8-1.9-1.5-2.2 2.4-2.4 2.2 1.5 1.9-.8zM12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z"/></svg>';
+const GEAR_SVG = '<svg width="32" height="32" viewBox="0 0 24 24" aria-hidden="true"><path fill="#ffc61a" d="M10.3 2h3.4l.5 2.6 1.9.8 2.2-1.5 2.4 2.4-1.5 2.2.8 1.9 2.6.5v3.4l-2.6.5-.8 1.9 1.5 2.2-2.4 2.4-2.2-1.5-1.9.8-.5 2.6h-3.4l-.5-2.6-1.9-.8-2.2 1.5-2.4-2.4 1.5-2.2-.8-1.9L2 13.7v-3.4l2.6-.5.8-1.9-1.5-2.2 2.4-2.4 2.2 1.5 1.9-.8zM12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z"/></svg>';
+const GEAR = T.logo || GEAR_SVG;
 
 function toast(msg){
   const host = document.getElementById("toastHost");
@@ -96,7 +109,7 @@ function questionFor(i){ return QUESTIONS[i]; }
 /* =====================================================================
    PROFESSOR
    ===================================================================== */
-const HOST_KEY = "qcf-host-v1";
+const HOST_KEY = T.key + "-host-v1";
 let H = null, hc = null, hostConnected = false, lastSecond = null, lastStateSent = 0;
 
 function newGameId(){ return rid(6); }
@@ -149,7 +162,7 @@ async function startHost(){
   H.connFailed = false;
   if(!H.game) H.game = newGameId();
   saveHost();
-  document.title = "Quiz Chão de Fábrica · Professor";
+  document.title = T.name + " · Professor";
   renderHost();
   try{
     const {client, b} = await connectAny(H.b);
@@ -278,7 +291,7 @@ function resultsCsv(){
 /* --- telas do professor --- */
 function hostTop(){
   return `<div class="topbar">
-    <div class="brand">${GEAR}<span>Quiz Chão de Fábrica</span></div>
+    <div class="brand">${GEAR}<span>${esc(T.name)}</span></div>
     <div class="row">
       <span class="chip">Sala <b>${esc(H.room)}</b></span>
       <span class="chip">Jogadores <b id="pcount">${activeIds().length}</b></span>
@@ -313,8 +326,8 @@ function renderLobby(){
     </div>
     <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
       <div>
-        <span class="eyebrow">Fundamentos dos Processos de Produção · Revisão ao vivo</span>
-        <h1 style="font-size:clamp(30px,4.4vw,52px);line-height:1;margin-top:8px">Aguardando a equipe do turno</h1>
+        <span class="eyebrow">${esc(T.eyebrow)}</span>
+        <h1 style="font-size:clamp(30px,4.4vw,52px);line-height:1;margin-top:8px">${esc(T.lobbyTitle)}</h1>
       </div>
       <div class="players">
         <div class="row"><span class="count" id="bigcount">${activeIds().length}</span><span class="muted">alunos na sala. Clique no × para remover um nome.</span></div>
@@ -427,7 +440,7 @@ function renderEnd(){
   $app.className = "app";
   $app.innerHTML = hostTop() + `
   <div class="board pop">
-    <span class="eyebrow" style="text-align:center">Fim do turno · ${H.qlist.length} questões</span>
+    <span class="eyebrow" style="text-align:center">${esc(T.endEyebrow)} · ${H.qlist.length} questões</span>
     <h2>Pódio</h2>
     <div class="podium">${pod(s,"s2",2)}${pod(g,"g",1)}${pod(b,"s3",3)}</div>
   </div>
@@ -462,11 +475,11 @@ function copyText(text, ok){
 const ROOM = (params.get("sala") || "").replace(/\D/g, "").slice(0, 8);
 let P = null, pc = null, pConnected = false, pTimer = null, joinRetry = null;
 
-function pKey(k){ return "qcf-" + k + "-" + ROOM; }
+function pKey(k){ return T.key + "-" + k + "-" + ROOM; }
 function ptopic(n){ return TOPIC_ROOT + ROOM + "/" + n; }
 
 async function startPlayer(){
-  document.title = "Quiz Chão de Fábrica · Sala " + ROOM;
+  document.title = T.name + " · Sala " + ROOM;
   $app.className = "app phone";
   let id = store.get(pKey("id"));
   if(!id){ id = rid(12); store.set(pKey("id"), id); }
@@ -517,14 +530,14 @@ function myAnswer(){ const a = store.get(answeredKey()); const s = P.state; retu
 function renderPJoin(){
   P.view = "join";
   $app.innerHTML = `
-  <div class="topbar"><div class="brand">${GEAR}<span>Quiz Chão de Fábrica</span></div><span class="chip">Sala <b>${esc(ROOM)}</b></span></div>
+  <div class="topbar"><div class="brand">${GEAR}<span>${esc(T.name)}</span></div><span class="chip">Sala <b>${esc(ROOM)}</b></span></div>
   <div class="hazard"></div>
   <div class="center">
     <form class="box pop" id="jf" autocomplete="off">
       <span class="eyebrow">Revisão ao vivo</span>
-      <h2>Bater o ponto e entrar no turno</h2>
+      <h2>${esc(T.joinTitle)}</h2>
       <label class="label" for="nick">Seu nome (como o professor vai ver no ranking)</label>
-      <input class="field" id="nick" maxlength="18" required placeholder="Ex.: Ana Paula" value="${esc(store.get("qcf-lastname") || "")}">
+      <input class="field" id="nick" maxlength="18" required placeholder="Ex.: Ana Paula" value="${esc(store.get(T.key + "-lastname") || "")}">
       <button class="btn" type="submit">Entrar</button>
       <p class="muted" style="font-size:13px">Quanto mais rápido você acertar, mais pontos ganha. Acertos seguidos valem bônus.</p>
     </form>
@@ -533,7 +546,7 @@ function renderPJoin(){
     e.preventDefault();
     const n = cleanName(document.getElementById("nick").value);
     if(!n){ document.getElementById("nick").focus(); return; }
-    P.name = n; store.set(pKey("name"), n); store.set("qcf-lastname", n);
+    P.name = n; store.set(pKey("name"), n); store.set(T.key + "-lastname", n);
     beep(880, .06, "square", .03);
     sendJoin(); renderPlayer(true);
   });
@@ -633,7 +646,7 @@ function renderPlayer(force){
     return;
   }
   if(ph === "end"){
-    const msg = m.r === 1 ? "Campeão do turno!" : m.r <= 3 ? "Pódio!" : "Fim do jogo";
+    const msg = m.r === 1 ? T.champion : m.r <= 3 ? "Pódio!" : "Fim do jogo";
     $app.innerHTML = pTop() + `
       <div class="result ${m.r<=3?"ok":"wait"} pop">
         <span class="eyebrow" style="color:inherit">${esc(m.n)}</span>
