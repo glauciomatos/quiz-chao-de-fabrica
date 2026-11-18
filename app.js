@@ -299,7 +299,6 @@ function renderHost(){
 }
 function renderLobby(){
   const url = joinUrl();
-  const n1 = QUESTIONS.filter(q=>q.a===1).length, n2 = QUESTIONS.filter(q=>q.a===2).length;
   $app.className = "app";
   $app.innerHTML = hostTop() + `
   ${H.connFailed ? `<div class="explain" role="alert" style="border-color:var(--bad)"><b style="color:var(--bad)">Este computador não conseguiu se conectar ao servidor do jogo.</b><br>A rede pode estar bloqueando a conexão. Tente: (1) clicar em Tentar de novo; (2) conectar o computador a outra rede, como o roteador do seu celular. Os alunos podem continuar usando a rede deles.<div style="margin-top:10px"><button class="btn small" onclick="location.reload()">Tentar de novo</button></div></div>` : (hostConnected ? "" : `<div class="explain"><span class="dot"></span> Conectando ao servidor do jogo… Aguarde o indicador Online antes de mostrar o QR Code.</div>`)}
@@ -324,9 +323,8 @@ function renderLobby(){
       <div class="settings">
         <label for="scope">Conteúdo
           <select id="scope">
-            <option value="0" ${H.scope===0?"selected":""}>Aulas 1 e 2 · ${QUESTIONS.length} questões</option>
-            <option value="1" ${H.scope===1?"selected":""}>Só Aula 1 · ${n1} questões</option>
-            <option value="2" ${H.scope===2?"selected":""}>Só Aula 2 · ${n2} questões</option>
+            <option value="0" ${H.scope===0?"selected":""}>Todas as aulas · ${QUESTIONS.length} questões</option>
+            ${Object.keys(AULAS).map(Number).map(a => `<option value="${a}" ${H.scope===a?"selected":""}>Só Aula ${a} · ${QUESTIONS.filter(q=>q.a===a).length} questões</option>`).join("")}
           </select></label>
         <label for="limit">Tempo por questão
           <select id="limit">
