@@ -5,10 +5,13 @@
  * O professor (navegador do projetor) é quem guarda o jogo e calcula as pontuações. */
 
 const params = new URLSearchParams(location.search);
+// Servidores públicos gratuitos. Os de porta 443 vêm primeiro: redes de escola costumam bloquear as outras portas.
 const BROKERS = [
-  "wss://broker.emqx.io:8084/mqtt",
-  "wss://broker.hivemq.com:8884/mqtt",
-  "wss://test.mosquitto.org:8081/mqtt"
+  {url: "wss://mqtt.eclipseprojects.io:443/mqtt"},
+  {url: "wss://public.cloud.shiftr.io:443", username: "public", password: "public"},
+  {url: "wss://broker.emqx.io:8084/mqtt"},
+  {url: "wss://broker.hivemq.com:8884/mqtt"},
+  {url: "wss://test.mosquitto.org:8081/mqtt"}
 ];
 const BROKER_OVERRIDE = params.get("broker"); // só para testes
 const TOPIC_ROOT = "quiz-chao-de-fabrica/v1/";
@@ -50,24 +53,43 @@ const sfx = {
 };
 
 /* ---------- conexão ---------- */
-function connectTo(url, timeoutMs){
+function connectTo(broker, timeoutMs){
+  const cfg = typeof broker === "string" ? {url: broker} : broker;
   return new Promise((resolve, reject) => {
-    const c = mqtt.connect(url, {
-      clientId: "qcf_" + rid(10), clean: true, keepalive: 30,
-      connectTimeout: timeoutMs, reconnectPeriod: 0, protocolVersion: 4
-    });
-    const t = setTimeout(() => { try{ c.end(true); }catch(e){} reject(new Error("timeout")); }, timeoutMs + 500);
-    c.once("connect", () => { clearTimeout(t); c.options.reconnectPeriod = 2000; resolve(c); });
-    c.once("error", err => { clearTimeout(t); try{ c.end(true); }catch(e){} reject(err); });
+    const opts = {clientId: "qcf_" + rid(10), clean: true, keepalive: 30, connectTimeout: timeoutMs, reconnectPeriod: 0, protocolVersion: 4};
+    if(cfg.username){ opts.username = cfg.username; opts.password = cfg.password; }
+    const c = mqtt.connect(cfg.url, opts);
+    let done = false;
+    const fail = err => { if(done) return; done = true; clearTimeout(t); try{ c.end(true); }catch(e){} reject(err || new Error("falhou")); };
+    const t = setTimeout(() => fail(new Error("timeout")), timeoutMs + 500);
+    c.once("connect", () => { if(done){ try{ c.end(true); }catch(e){} return; } done = true; clearTimeout(t); c.options.reconnectPeriod = 2000; resolve(c); });
+    c.once("error", fail);
+    c.once("close", () => fail(new Error("fechou")));
   });
 }
-async function connectAny(preferred){
-  if(BROKER_OVERRIDE) return {client: await connectTo(BROKER_OVERRIDE, 6000), b: 0};
-  const order = [preferred, ...BROKERS.keys()].filter((v,i,a)=>v!=null && BROKERS[v] && a.indexOf(v)===i);
-  for(const b of order){
-    try{ return {client: await connectTo(BROKERS[b], 7000), b}; }catch(e){}
-  }
-  throw new Error("sem conexão");
+/* Tenta todos os servidores ao mesmo tempo. Depois do primeiro sucesso espera um instante
+   e fica com o preferido (o já usado pela sala) ou o primeiro da lista que conectou. */
+function connectAny(preferred){
+  if(BROKER_OVERRIDE) return connectTo(BROKER_OVERRIDE, 6000).then(client => ({client, b: 0}));
+  return new Promise((resolve, reject) => {
+    const ok = {}; let pending = BROKERS.length, chosen = false, timer = null;
+    const choose = () => {
+      if(chosen) return; chosen = true;
+      const keys = Object.keys(ok).map(Number).sort((x,y) => x - y);
+      if(!keys.length){ reject(new Error("sem conexão")); return; }
+      const b = keys.includes(preferred) ? preferred : keys[0];
+      keys.forEach(k => { if(k !== b) try{ ok[k].end(true); }catch(e){} });
+      resolve({client: ok[b], b});
+    };
+    BROKERS.forEach((cfg, i) => {
+      connectTo(cfg, 9000).then(c => {
+        if(chosen){ try{ c.end(true); }catch(e){} return; }
+        ok[i] = c;
+        if(i === preferred || i === 0) choose();
+        else if(!timer) timer = setTimeout(choose, 1500);
+      }).catch(() => {}).finally(() => { if(--pending === 0) choose(); });
+    });
+  });
 }
 function questionFor(i){ return QUESTIONS[i]; }
 
@@ -78,7 +100,7 @@ const HOST_KEY = "qcf-host-v1";
 let H = null, hc = null, hostConnected = false, lastSecond = null, lastStateSent = 0;
 
 function newGameId(){ return rid(6); }
-function freshHost(){
+function freshHost(){ /* estado salvo no navegador do professor */
   return { room: String(10000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 90000)), b: 0,
     game: newGameId(), phase: "lobby", scope: 0, limit: 20, qlist: [], qi: -1, qStart: 0,
     players: {}, kicked: [], answers: {}, seq: 0 };
@@ -124,6 +146,7 @@ function publishScores(){
 
 async function startHost(){
   H = store.get(HOST_KEY) || freshHost();
+  H.connFailed = false;
   if(!H.game) H.game = newGameId();
   saveHost();
   document.title = "Quiz Chão de Fábrica · Professor";
@@ -132,12 +155,11 @@ async function startHost(){
     const {client, b} = await connectAny(H.b);
     hc = client;
     if(H.b !== b){ H.b = b; saveHost(); }
-    hostConnected = true;
+    hostConnected = true; H.connFailed = false;
     wireHostClient();
     onHostConnect();
   }catch(e){
-    hostConnected = false; renderHost();
-    toast("Sem conexão com o servidor do jogo. Verifique a internet e recarregue a página.");
+    hostConnected = false; H.connFailed = true; renderHost();
   }
   setInterval(hostTick, 250);
 }
@@ -280,6 +302,7 @@ function renderLobby(){
   const n1 = QUESTIONS.filter(q=>q.a===1).length, n2 = QUESTIONS.filter(q=>q.a===2).length;
   $app.className = "app";
   $app.innerHTML = hostTop() + `
+  ${H.connFailed ? `<div class="explain" role="alert" style="border-color:var(--bad)"><b style="color:var(--bad)">Este computador não conseguiu se conectar ao servidor do jogo.</b><br>A rede pode estar bloqueando a conexão. Tente: (1) clicar em Tentar de novo; (2) conectar o computador a outra rede, como o roteador do seu celular. Os alunos podem continuar usando a rede deles.<div style="margin-top:10px"><button class="btn small" onclick="location.reload()">Tentar de novo</button></div></div>` : (hostConnected ? "" : `<div class="explain"><span class="dot"></span> Conectando ao servidor do jogo… Aguarde o indicador Online antes de mostrar o QR Code.</div>`)}
   <div class="lobby pop">
     <div class="joincard">
       <div class="step">Aponte a câmera do celular para o QR Code</div>
@@ -453,7 +476,7 @@ async function startPlayer(){
   if(!P.name) renderPJoin(); else renderPlayer(true);
   const b = parseInt(params.get("b"), 10);
   try{
-    pc = BROKER_OVERRIDE ? await connectTo(BROKER_OVERRIDE, 7000) : await connectTo(BROKERS[Number.isInteger(b) && BROKERS[b] ? b : 0], 8000);
+    pc = BROKER_OVERRIDE ? await connectTo(BROKER_OVERRIDE, 7000) : await connectTo(BROKERS[Number.isInteger(b) && BROKERS[b] ? b : 0], 9000);
     pConnected = true;
     pc.on("connect", () => { pConnected = true; onPConnect(); });
     pc.on("close", () => { pConnected = false; renderPlayer(true); });
@@ -541,7 +564,7 @@ function renderPlayer(force){
     $app.innerHTML = pTop() + `<div class="center"><div class="result wait"><h2>Você saiu da sala</h2><p>O professor removeu este nome. Se foi engano, avise o professor.</p></div></div>`; return;
   }
   if(view === "connecting"){
-    $app.innerHTML = pTop() + `<div class="center"><div class="result wait"><span class="dot"></span><h2>Conectando à sala ${esc(ROOM)}…</h2><p class="muted">Se demorar, confira o número da sala com o professor.</p></div></div>`; return;
+    $app.innerHTML = pTop() + `<div class="center"><div class="result wait"><span class="dot"></span><h2>Conectando à sala ${esc(ROOM)}…</h2><p class="muted">Se demorar, leia de novo o QR Code que está no projetor.</p></div></div>`; return;
   }
   if(view === "entering"){
     $app.innerHTML = pTop() + `<div class="center"><div class="result wait"><span class="dot"></span><h2>Entrando…</h2><p class="muted">Aguardando a tela do professor confirmar seu nome.</p><button class="btn ghost small" id="rename">Trocar nome</button></div></div>`;
